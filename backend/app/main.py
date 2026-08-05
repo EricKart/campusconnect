@@ -28,6 +28,6 @@ app.include_router(notifications.router)
 def health(db: Session = Depends(get_db)):
     try:
         db.execute(text("SELECT 1"))
-        return {"status": "ok"}
+        return {"status": "ok", "gitops": "v2"}
     except Exception as exc:  # pragma: no cover - failure path only
         return {"status": "error", "detail": str(exc)}
