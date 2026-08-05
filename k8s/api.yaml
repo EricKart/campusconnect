@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: acrcampusconnectceb383.azurecr.io/campusconnect/api:v1
+          image: acrcampusconnectceb383.azurecr.io/campusconnect/api:81244f054b1781c3d1923f3d2f18aa0434fa9ae7
           ports:
             - containerPort: 8000
           env:
