@@ -22,8 +22,5 @@
     "eslint-config-next": "16.2.12",
     "tailwindcss": "^4",
     "typescript": "^5"
-  },
-  "overrides": {
-    "tar": "^7.5.19"
   }
 }
