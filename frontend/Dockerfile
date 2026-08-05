@@ -20,6 +20,10 @@ RUN npm run build
 FROM node:20-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# The node:20-slim base image can lag behind Debian's own security patches
+# (Trivy caught libgnutls30 CRITICAL CVE-2026-33845/42010 here) -- pulling
+# the latest patched packages at build time, not just at image-publish time.
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
