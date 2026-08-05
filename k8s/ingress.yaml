@@ -1,0 +1,31 @@
+# Single origin for the whole app: "/" goes to the frontend, "/api/..."
+# goes to the api service. The api's own routes have no "/api" prefix
+# (they're /auth, /posts, /forums, ...), so rewrite-target strips it before
+# forwarding. This is what makes the frontend's NEXT_PUBLIC_API_URL=/api
+# build-time setting work -- same-origin fetches, no CORS, and the
+# httpOnly auth cookie flows naturally since browser and API share a host.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: campusconnect
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8000
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000

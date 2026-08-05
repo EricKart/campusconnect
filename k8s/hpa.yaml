@@ -1,0 +1,22 @@
+# Scales the api Deployment on CPU. targetCPUUtilizationPercentage is
+# relative to the container's own requested CPU (100m in api.yaml) -- 50%
+# means "add a replica once pods are averaging 50m used out of the 100m
+# each pod asked for," not 50% of a whole core.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50

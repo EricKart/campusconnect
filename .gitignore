@@ -1,0 +1,28 @@
+# Terraform state and cache -- state files contain secret values in plain
+# text regardless of `sensitive = true` (that flag only hides CLI output).
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/*.tfplan
+infra/tfplan*
+infra/.terraform.lock.hcl
+
+# Real secrets -- only *.example templates are meant to be committed
+backend/.env
+frontend/.env.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node / Next.js
+node_modules/
+frontend/.next/
+frontend/out/
+
+# Editor / OS noise
+.vscode/
+.DS_Store
+Thumbs.db

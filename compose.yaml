@@ -1,0 +1,57 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://campusconnect:campusconnect_dev_password@db:5432/campusconnect
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: dev-secret-change-me
+      CORS_ORIGINS: http://localhost:3000
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+      - redis
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    environment:
+      DATABASE_URL: postgresql+psycopg2://campusconnect:campusconnect_dev_password@db:5432/campusconnect
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: dev-secret-change-me
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: campusconnect
+      POSTGRES_PASSWORD: campusconnect_dev_password
+      POSTGRES_DB: campusconnect
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+
+volumes:
+  pgdata:
