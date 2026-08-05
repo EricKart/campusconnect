@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: acrcampusconnectceb383.azurecr.io/campusconnect/worker:v1
+          image: acrcampusconnectceb383.azurecr.io/campusconnect/worker:81244f054b1781c3d1923f3d2f18aa0434fa9ae7
           env:
             - name: DATABASE_URL
               valueFrom: { secretKeyRef: { name: campusconnect-secrets, key: database-url } }

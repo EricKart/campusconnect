@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: acrcampusconnectceb383.azurecr.io/campusconnect/frontend:v1
+          image: acrcampusconnectceb383.azurecr.io/campusconnect/frontend:81244f054b1781c3d1923f3d2f18aa0434fa9ae7
           ports:
             - containerPort: 3000
           resources:
