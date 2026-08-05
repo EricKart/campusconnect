@@ -1,0 +1,114 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+# id-token: write is what lets Azure trust this specific workflow run via
+# OIDC -- no client secret is stored in GitHub at all.
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r backend/requirements.txt pytest
+      - run: python -m pytest tests -v
+        working-directory: backend
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  build-and-scan:
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: api
+            context: backend
+            dockerfile: backend/Dockerfile
+          - service: worker
+            context: backend
+            dockerfile: backend/Dockerfile.worker
+          - service: frontend
+            context: frontend
+            dockerfile: frontend/Dockerfile
+            build-args: NEXT_PUBLIC_API_URL=/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - run: az acr login --name ${{ vars.ACR_NAME }}
+
+      # Build locally first -- the Trivy scan below runs BEFORE any push,
+      # so a vulnerable image never reaches the registry at all.
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: true
+          build-args: ${{ matrix.build-args || '' }}
+          tags: ${{ vars.ACR_NAME }}.azurecr.io/campusconnect/${{ matrix.service }}:${{ github.sha }}
+
+      # The real gate: fails the job on any CRITICAL vulnerability with a
+      # known fix. Unfixed base-OS CVEs are ignored -- failing a pipeline
+      # on a vulnerability nobody can patch yet teaches the wrong lesson.
+      - uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ vars.ACR_NAME }}.azurecr.io/campusconnect/${{ matrix.service }}:${{ github.sha }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # Only reachable if Trivy passed. Only pushes on an actual push to
+      # master -- a pull request builds and scans, but never publishes.
+      - if: github.event_name == 'push'
+        run: docker push ${{ vars.ACR_NAME }}.azurecr.io/campusconnect/${{ matrix.service }}:${{ github.sha }}
+
+  deploy:
+    needs: build-and-scan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - run: az aks get-credentials --resource-group ${{ vars.AKS_RESOURCE_GROUP }} --name ${{ vars.AKS_CLUSTER_NAME }} --overwrite-existing
+
+      - run: |
+          kubectl set image deployment/api api=${{ vars.ACR_NAME }}.azurecr.io/campusconnect/api:${{ github.sha }}
+          kubectl set image deployment/worker worker=${{ vars.ACR_NAME }}.azurecr.io/campusconnect/worker:${{ github.sha }}
+          kubectl set image deployment/frontend frontend=${{ vars.ACR_NAME }}.azurecr.io/campusconnect/frontend:${{ github.sha }}
+          kubectl rollout status deployment/api --timeout=180s
+          kubectl rollout status deployment/worker --timeout=180s
+          kubectl rollout status deployment/frontend --timeout=180s
