@@ -1,0 +1,22 @@
+# The GitOps definition of "what should be running" -- this Application
+# object tells ArgoCD: watch this repo's k8s/ folder, and continuously make
+# the cluster match it. Deliberately created WITHOUT automated sync at
+# first (see the deck) -- the first real sync is triggered manually to
+# prove ArgoCD correctly recognizes the already-running app as a match.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: campusconnect
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/EricKart/campusconnect.git
+    targetRevision: master
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false
