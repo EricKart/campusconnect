@@ -18,6 +18,9 @@ function ForumDetailContent() {
   }
 
   useEffect(() => {
+    // Idiomatic fetch-on-mount, not a cascading-render bug -- `load` sets
+    // state only after an awaited fetch resolves, never synchronously.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.slug]);
