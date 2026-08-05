@@ -3,11 +3,22 @@ name: CI/CD
 on:
   push:
     branches: [master]
+    # A GitOps deploy commit only touches k8s/ manifest image tags -- if
+    # this workflow re-ran on that merge too, it would rebuild identical
+    # images under a new tag, open ANOTHER manifest-bump PR, and merging
+    # THAT would trigger the workflow again... forever. paths-ignore
+    # breaks the loop at its source: manifest-only pushes never re-enter
+    # the pipeline at all. pull_request has no such filter -- every PR,
+    # including the bump PR itself, still gets fully tested and scanned.
+    paths-ignore:
+      - "k8s/**"
   pull_request:
     branches: [master]
 
 # id-token: write is what lets Azure trust this specific workflow run via
-# OIDC -- no client secret is stored in GitHub at all.
+# OIDC -- no client secret is stored in GitHub at all. contents/pull-requests
+# write is NOT granted here at the workflow level -- only the deploy job
+# below needs it, and least-privilege means every other job stays read-only.
 permissions:
   id-token: write
   contents: read
@@ -92,23 +103,34 @@ jobs:
       - if: github.event_name == 'push'
         run: docker push ${{ vars.ACR_NAME }}.azurecr.io/campusconnect/${{ matrix.service }}:${{ github.sha }}
 
+  # GitOps deploy: this job never touches AKS at all -- no azure/login,
+  # no kubectl, no cluster credentials. It only updates the image tags in
+  # the k8s/ manifests and gets that change onto master. ArgoCD (running
+  # inside the cluster, watching this repo) is what actually applies it.
   deploy:
     needs: build-and-scan
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - run: az aks get-credentials --resource-group ${{ vars.AKS_RESOURCE_GROUP }} --name ${{ vars.AKS_CLUSTER_NAME }} --overwrite-existing
+      - uses: actions/checkout@v4
 
       - run: |
-          kubectl set image deployment/api api=${{ vars.ACR_NAME }}.azurecr.io/campusconnect/api:${{ github.sha }}
-          kubectl set image deployment/worker worker=${{ vars.ACR_NAME }}.azurecr.io/campusconnect/worker:${{ github.sha }}
-          kubectl set image deployment/frontend frontend=${{ vars.ACR_NAME }}.azurecr.io/campusconnect/frontend:${{ github.sha }}
-          kubectl rollout status deployment/api --timeout=180s
-          kubectl rollout status deployment/worker --timeout=180s
-          kubectl rollout status deployment/frontend --timeout=180s
+          sed -i "s|campusconnect/api:.*|campusconnect/api:${{ github.sha }}|" k8s/api.yaml
+          sed -i "s|campusconnect/worker:.*|campusconnect/worker:${{ github.sha }}|" k8s/worker.yaml
+          sed -i "s|campusconnect/frontend:.*|campusconnect/frontend:${{ github.sha }}|" k8s/frontend.yaml
+
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b deploy/${{ github.sha }}
+          git commit -am "chore(deploy): bump image tags to ${{ github.sha }}"
+          git push origin deploy/${{ github.sha }}
+          gh pr create --title "chore(deploy): bump image tags to ${{ github.sha }}" \
+            --body "Automated -- built and Trivy-scanned by this same workflow run. ArgoCD applies this once merged." \
+            --base master --head deploy/${{ github.sha }}
+          gh pr merge --auto --squash "deploy/${{ github.sha }}"
